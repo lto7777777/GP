@@ -2,7 +2,20 @@
 import { useState } from "react";
 import { generateRSAKeyPair, exportPublicKeyToPem } from "./crypto";
 
-const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:3000";
+// Auto-detect API base: use same hostname as current page, or fallback to env/localhost
+const getApiBase = () => {
+  if (import.meta.env.VITE_API_BASE) {
+    console.log('Using VITE_API_BASE from env:', import.meta.env.VITE_API_BASE);
+    return import.meta.env.VITE_API_BASE;
+  }
+  const hostname = window.location.hostname;
+  const apiBase = hostname === 'localhost' || hostname === '127.0.0.1' 
+    ? 'http://localhost:3000' 
+    : `http://${hostname}:3000`;
+  console.log('Auto-detected API base:', apiBase, '(from hostname:', hostname + ')');
+  return apiBase;
+};
+const API_BASE = getApiBase();
 
 export default function Login({ onLogin }) {
   const [username, setUsername] = useState("");
@@ -38,7 +51,15 @@ export default function Login({ onLogin }) {
 
       // Step 2: Generate device keypair
       const deviceId = `web-${Math.random().toString(36).slice(2, 11)}`;
-      const keyPair = await generateRSAKeyPair();
+      let keyPair;
+      try {
+        keyPair = await generateRSAKeyPair();
+      } catch (err) {
+        console.error('Crypto error:', err);
+        setError(err.message || 'Failed to generate encryption keys. Make sure you are using http://localhost:4173 or HTTPS.');
+        setLoading(false);
+        return;
+      }
       const publicPem = await exportPublicKeyToPem(keyPair.publicKey);
 
       // Step 3: Register device with server

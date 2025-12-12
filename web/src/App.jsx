@@ -4,9 +4,18 @@ import Login from "./Login";
 import ChatList from "./ChatList";
 import ChatView from "./ChatView";
 import NewChat from "./NewChat";
-import { exportPrivateKeyToPem, importPrivateKeyFromPem } from "./crypto";
+import { exportPrivateKeyToPem, exportPublicKeyToPem, importPrivateKeyFromPem, importPublicKeyFromPem } from "./crypto";
 
-const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:3000";
+// Auto-detect API base: use same hostname as current page, or fallback to env/localhost
+const getApiBase = () => {
+  if (import.meta.env.VITE_API_BASE) return import.meta.env.VITE_API_BASE;
+  const hostname = window.location.hostname;
+  if (hostname === 'localhost' || hostname === '127.0.0.1') {
+    return 'http://localhost:3000';
+  }
+  return `http://${hostname}:3000`;
+};
+const API_BASE = getApiBase();
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -19,31 +28,41 @@ export default function App() {
     const username = localStorage.getItem("username");
     const deviceId = localStorage.getItem("deviceId");
     const privateKeyPem = localStorage.getItem("privateKeyPem");
+    const publicKeyPem = localStorage.getItem("publicKeyPem");
 
     if (token && username && deviceId && privateKeyPem) {
-      // Reconstruct keyPair from stored PEM
-      importPrivateKeyFromPem(privateKeyPem).then((privateKey) => {
-        // We need to get the public key from server or regenerate
-        // For now, we'll just set a placeholder - in production, store both keys encrypted
+      // Reconstruct keyPair from stored PEMs
+      Promise.all([
+        importPrivateKeyFromPem(privateKeyPem),
+        publicKeyPem ? importPublicKeyFromPem(publicKeyPem) : null
+      ]).then(([privateKey, publicKey]) => {
         setUser({
           token,
           username,
           deviceId,
-          keyPair: { privateKey }, // Public key will be fetched when needed
+          keyPair: { privateKey, publicKey }, // Both keys restored
         });
-      }).catch(() => {
+      }).catch((err) => {
+        console.error("Failed to restore keys:", err);
         // If key import fails, clear session
         localStorage.clear();
       });
     }
   }, []);
 
-  const handleLogin = (userData) => {
+  const handleLogin = async (userData) => {
     setUser(userData);
-    // Store private key PEM in localStorage (in production, encrypt with passphrase)
-    exportPrivateKeyToPem(userData.keyPair.privateKey).then((pem) => {
-      localStorage.setItem("privateKeyPem", pem);
-    });
+    // Store both keys in localStorage (in production, encrypt with passphrase)
+    try {
+      const [privatePem, publicPem] = await Promise.all([
+        exportPrivateKeyToPem(userData.keyPair.privateKey),
+        exportPublicKeyToPem(userData.keyPair.publicKey)
+      ]);
+      localStorage.setItem("privateKeyPem", privatePem);
+      localStorage.setItem("publicKeyPem", publicPem);
+    } catch (err) {
+      console.error("Failed to save keys:", err);
+    }
     setView("list");
   };
 

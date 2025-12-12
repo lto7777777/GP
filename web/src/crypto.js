@@ -16,57 +16,110 @@ function b642ab(b64) {
   return bytes.buffer;
 }
 
+// Try to use Web Crypto, fallback to node-forge if not available
+let cryptoFallback = null;
+
+async function loadCryptoFallback() {
+  if (!cryptoFallback) {
+    try {
+      cryptoFallback = await import('./crypto-fallback.js');
+    } catch (err) {
+      console.error('Failed to load crypto fallback:', err);
+    }
+  }
+  return cryptoFallback;
+}
+
 export async function generateRSAKeyPair() {
-  return window.crypto.subtle.generateKey(
-    {
-      name: "RSA-OAEP",
-      modulusLength: 2048,
-      publicExponent: new Uint8Array([1, 0, 1]),
-      hash: "SHA-256",
-    },
-    true,
-    ["encrypt", "decrypt", "wrapKey", "unwrapKey"],
-  );
+  if (window.crypto && window.crypto.subtle) {
+    // Use Web Crypto API (preferred - more secure)
+    return window.crypto.subtle.generateKey(
+      {
+        name: "RSA-OAEP",
+        modulusLength: 2048,
+        publicExponent: new Uint8Array([1, 0, 1]),
+        hash: "SHA-256",
+      },
+      true,
+      ["encrypt", "decrypt", "wrapKey", "unwrapKey"],
+    );
+  } else {
+    // Fallback to node-forge (works on HTTP)
+    console.warn('Web Crypto not available, using fallback (node-forge)');
+    const fallback = await loadCryptoFallback();
+    if (!fallback) {
+      throw new Error('Crypto API not available and fallback failed to load');
+    }
+    return fallback.generateRSAKeyPair();
+  }
 }
 
 export async function exportPublicKeyToPem(publicKey) {
+  if (publicKey._forge) {
+    // It's a forge key, use fallback
+    const fallback = await loadCryptoFallback();
+    return fallback.exportPublicKeyToPem(publicKey);
+  }
   const spki = await window.crypto.subtle.exportKey("spki", publicKey);
   const b64 = ab2b64(spki);
   return `-----BEGIN PUBLIC KEY-----\n${b64.match(/.{1,64}/g).join("\n")}\n-----END PUBLIC KEY-----`;
 }
 
 export async function exportPrivateKeyToPem(privateKey) {
+  if (privateKey._forge) {
+    // It's a forge key, use fallback
+    const fallback = await loadCryptoFallback();
+    return fallback.exportPrivateKeyToPem(privateKey);
+  }
   const pkcs8 = await window.crypto.subtle.exportKey("pkcs8", privateKey);
   const b64 = ab2b64(pkcs8);
   return `-----BEGIN PRIVATE KEY-----\n${b64.match(/.{1,64}/g).join("\n")}\n-----END PRIVATE KEY-----`;
 }
 
 export async function importPrivateKeyFromPem(pem) {
-  const b64 = pem.replace(/-----(BEGIN|END) PRIVATE KEY-----/g, "").replace(/\s+/g, "");
-  const ab = b642ab(b64);
-  return window.crypto.subtle.importKey(
-    "pkcs8",
-    ab,
-    { name: "RSA-OAEP", hash: "SHA-256" },
-    true,
-    ["decrypt", "unwrapKey"],
-  );
+  if (window.crypto && window.crypto.subtle) {
+    const b64 = pem.replace(/-----(BEGIN|END) PRIVATE KEY-----/g, "").replace(/\s+/g, "");
+    const ab = b642ab(b64);
+    return window.crypto.subtle.importKey(
+      "pkcs8",
+      ab,
+      { name: "RSA-OAEP", hash: "SHA-256" },
+      true,
+      ["decrypt", "unwrapKey"],
+    );
+  } else {
+    const fallback = await loadCryptoFallback();
+    return fallback.importPrivateKeyFromPem(pem);
+  }
 }
 
 export async function importPublicKeyFromPem(pem) {
-  const b64 = pem.replace(/-----(BEGIN|END) PUBLIC KEY-----/g, "").replace(/\s+/g, "");
-  const ab = b642ab(b64);
-  return window.crypto.subtle.importKey(
-    "spki",
-    ab,
-    { name: "RSA-OAEP", hash: "SHA-256" },
-    true,
-    ["encrypt", "wrapKey"],
-  );
+  if (window.crypto && window.crypto.subtle) {
+    const b64 = pem.replace(/-----(BEGIN|END) PUBLIC KEY-----/g, "").replace(/\s+/g, "");
+    const ab = b642ab(b64);
+    return window.crypto.subtle.importKey(
+      "spki",
+      ab,
+      { name: "RSA-OAEP", hash: "SHA-256" },
+      true,
+      ["encrypt", "wrapKey"],
+    );
+  } else {
+    const fallback = await loadCryptoFallback();
+    return fallback.importPublicKeyFromPem(pem);
+  }
 }
 
 export async function encryptMessageForPublicKey(plaintext, recipientPublicPem, metadata = {}) {
   const recipientKey = await importPublicKeyFromPem(recipientPublicPem);
+  
+  if (recipientKey._forge || !window.crypto || !window.crypto.subtle) {
+    // Use fallback
+    const fallback = await loadCryptoFallback();
+    return fallback.encryptMessageForPublicKey(plaintext, recipientPublicPem, metadata);
+  }
+  
+  // Use Web Crypto
   const aesKey = await window.crypto.subtle.generateKey(
     { name: "AES-GCM", length: 256 },
     true,
@@ -95,6 +148,13 @@ export async function encryptMessageForPublicKey(plaintext, recipientPublicPem, 
 }
 
 export async function decryptMessageWithPrivateKey(payload, privateKey) {
+  if (privateKey._forge || !window.crypto || !window.crypto.subtle) {
+    // Use fallback
+    const fallback = await loadCryptoFallback();
+    return fallback.decryptMessageWithPrivateKey(payload, privateKey);
+  }
+  
+  // Use Web Crypto
   const wrapped = b642ab(payload.wrappedKey);
   const aesKey = await window.crypto.subtle.unwrapKey(
     "raw",

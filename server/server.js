@@ -1,4 +1,5 @@
 // SecureChat Server - Complete rebuild with auth, device management, and E2E encryption relay
+// Now using Redis for persistent storage
 const express = require('express');
 const http = require('http');
 const WebSocket = require('ws');
@@ -7,6 +8,7 @@ const helmet = require('helmet');
 const bodyParser = require('body-parser');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const store = require('./store');
 
 const app = express();
 app.use(helmet());
@@ -16,10 +18,9 @@ app.use(bodyParser.json());
 const JWT_SECRET = process.env.JWT_SECRET || 'change-this-in-production-use-env-variable';
 const PORT = process.env.PORT || 3000;
 
-// In-memory stores (replace with MongoDB/PostgreSQL in production)
-const users = {};        // username -> { passwordHash, devices: { deviceId: { publicKey, deviceName, ws } } }
-const messages = [];     // queued encrypted messages for offline delivery
-const conversations = {}; // conversationId -> [message objects] for history
+// In-memory WebSocket connections (can't be stored in Redis)
+// Maps: username -> deviceId -> WebSocket
+const wsConnections = {};
 
 // Helper: Generate conversation ID between two users
 function getConversationId(user1, user2) {
@@ -39,120 +40,202 @@ function verifyToken(req, res, next) {
   }
 }
 
+// Helper: Get WebSocket for a device
+function getDeviceWebSocket(username, deviceId) {
+  if (!wsConnections[username]) return null;
+  return wsConnections[username][deviceId] || null;
+}
+
+// Helper: Set WebSocket for a device
+function setDeviceWebSocket(username, deviceId, ws) {
+  if (!wsConnections[username]) wsConnections[username] = {};
+  wsConnections[username][deviceId] = ws;
+}
+
+// Helper: Remove WebSocket for a device
+function removeDeviceWebSocket(username, deviceId) {
+  if (wsConnections[username]) {
+    delete wsConnections[username][deviceId];
+    if (Object.keys(wsConnections[username]).length === 0) {
+      delete wsConnections[username];
+    }
+  }
+}
+
 // ========== AUTH ENDPOINTS ==========
 
 // Register new user
 app.post('/api/auth/register', async (req, res) => {
-  const { username, password } = req.body;
-  if (!username || !password) {
-    return res.status(400).json({ error: 'Username and password required' });
+  try {
+    const { username, password } = req.body;
+    if (!username || !password) {
+      return res.status(400).json({ error: 'Username and password required' });
+    }
+    
+    const exists = await store.userExists(username);
+    if (exists) {
+      return res.status(409).json({ error: 'Username already exists' });
+    }
+    
+    const passwordHash = await bcrypt.hash(password, 10);
+    await store.createUser(username, passwordHash);
+    const token = jwt.sign({ username }, JWT_SECRET, { expiresIn: '7d' });
+    res.json({ token, username });
+  } catch (err) {
+    console.error('Register error:', err);
+    res.status(500).json({ error: 'Internal server error' });
   }
-  if (users[username]) {
-    return res.status(409).json({ error: 'Username already exists' });
-  }
-  const passwordHash = await bcrypt.hash(password, 10);
-  users[username] = { passwordHash, devices: {} };
-  const token = jwt.sign({ username }, JWT_SECRET, { expiresIn: '7d' });
-  res.json({ token, username });
 });
 
 // Login
 app.post('/api/auth/login', async (req, res) => {
-  const { username, password } = req.body;
-  if (!username || !password) {
-    return res.status(400).json({ error: 'Username and password required' });
+  try {
+    const { username, password } = req.body;
+    if (!username || !password) {
+      return res.status(400).json({ error: 'Username and password required' });
+    }
+    
+    const user = await store.getUser(username);
+    if (!user) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+    
+    const valid = await bcrypt.compare(password, user.passwordHash);
+    if (!valid) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+    
+    const token = jwt.sign({ username }, JWT_SECRET, { expiresIn: '7d' });
+    res.json({ token, username });
+  } catch (err) {
+    console.error('Login error:', err);
+    res.status(500).json({ error: 'Internal server error' });
   }
-  const user = users[username];
-  if (!user) {
-    return res.status(401).json({ error: 'Invalid credentials' });
-  }
-  const valid = await bcrypt.compare(password, user.passwordHash);
-  if (!valid) {
-    return res.status(401).json({ error: 'Invalid credentials' });
-  }
-  const token = jwt.sign({ username }, JWT_SECRET, { expiresIn: '7d' });
-  res.json({ token, username });
 });
 
 // ========== DEVICE MANAGEMENT ==========
 
 // Register device (called automatically after login)
-app.post('/api/devices/register', verifyToken, (req, res) => {
-  const { deviceId, publicKey, deviceName } = req.body;
-  const { username } = req.user;
-  if (!deviceId || !publicKey) {
-    return res.status(400).json({ error: 'deviceId and publicKey required' });
+app.post('/api/devices/register', verifyToken, async (req, res) => {
+  try {
+    const { deviceId, publicKey, deviceName } = req.body;
+    const { username } = req.user;
+    
+    if (!deviceId || !publicKey) {
+      return res.status(400).json({ error: 'deviceId and publicKey required' });
+    }
+    
+    const exists = await store.userExists(username);
+    if (!exists) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    await store.registerDevice(username, deviceId, {
+      publicKey,
+      deviceName: deviceName || 'Unknown Device',
+      registeredAt: Date.now()
+    });
+    
+    console.log(`Device registered: ${username}/${deviceId}`);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Device registration error:', err);
+    res.status(500).json({ error: 'Internal server error' });
   }
-  if (!users[username]) {
-    return res.status(404).json({ error: 'User not found' });
-  }
-  users[username].devices[deviceId] = {
-    publicKey,
-    deviceName: deviceName || 'Unknown Device',
-    registeredAt: Date.now(),
-    ws: null
-  };
-  console.log(`Device registered: ${username}/${deviceId}`);
-  res.json({ ok: true });
 });
 
 // Get all devices for a user (for multi-device support)
-app.get('/api/devices', verifyToken, (req, res) => {
-  const { username } = req.user;
-  const user = users[username];
-  if (!user) return res.status(404).json({ error: 'User not found' });
-  const deviceList = Object.keys(user.devices).map(deviceId => ({
-    deviceId,
-    deviceName: user.devices[deviceId].deviceName,
-    registeredAt: user.devices[deviceId].registeredAt
-  }));
-  res.json({ devices: deviceList });
+app.get('/api/devices', verifyToken, async (req, res) => {
+  try {
+    const { username } = req.user;
+    const devices = await store.getAllDevices(username);
+    
+    if (!devices) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    
+    const deviceList = Object.keys(devices).map(deviceId => ({
+      deviceId,
+      deviceName: devices[deviceId].deviceName,
+      registeredAt: devices[deviceId].registeredAt
+    }));
+    
+    res.json({ devices: deviceList });
+  } catch (err) {
+    console.error('Get devices error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 // Get public keys for a recipient (for encryption)
-app.get('/api/users/:username/public-keys', verifyToken, (req, res) => {
-  const { username: recipientUsername } = req.params;
-  const user = users[recipientUsername];
-  if (!user) return res.status(404).json({ error: 'User not found' });
-  const devices = {};
-  Object.keys(user.devices).forEach(deviceId => {
-    if (user.devices[deviceId].publicKey) {
-      devices[deviceId] = user.devices[deviceId].publicKey;
+app.get('/api/users/:username/public-keys', verifyToken, async (req, res) => {
+  try {
+    const { username: recipientUsername } = req.params;
+    const devices = await store.getAllDevices(recipientUsername);
+    
+    if (!devices) {
+      return res.status(404).json({ error: 'User not found' });
     }
-  });
-  res.json({ devices });
+    
+    const publicKeys = {};
+    Object.keys(devices).forEach(deviceId => {
+      if (devices[deviceId].publicKey) {
+        publicKeys[deviceId] = devices[deviceId].publicKey;
+      }
+    });
+    
+    res.json({ devices: publicKeys });
+  } catch (err) {
+    console.error('Get public keys error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 // ========== MESSAGES & CONVERSATIONS ==========
 
 // Get conversation history
-app.get('/api/conversations/:otherUsername', verifyToken, (req, res) => {
-  const { username } = req.user;
-  const { otherUsername } = req.params;
-  const convId = getConversationId(username, otherUsername);
-  const history = conversations[convId] || [];
-  res.json({ messages: history });
+app.get('/api/conversations/:otherUsername', verifyToken, async (req, res) => {
+  try {
+    const { username } = req.user;
+    const { otherUsername } = req.params;
+    const convId = getConversationId(username, otherUsername);
+    const history = await store.getConversationHistory(convId);
+    res.json({ messages: history });
+  } catch (err) {
+    console.error('Get conversation error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 // Get list of conversations (users you've chatted with)
-app.get('/api/conversations', verifyToken, (req, res) => {
-  const { username } = req.user;
-  const convList = [];
-  Object.keys(conversations).forEach(convId => {
-    if (convId.includes(username)) {
-      const parts = convId.split('_');
-      const otherUser = parts[0] === username ? parts[1] : parts[0];
-      const lastMsg = conversations[convId][conversations[convId].length - 1];
-      if (lastMsg) {
-        convList.push({
-          username: otherUser,
-          lastMessage: lastMsg,
-          unreadCount: 0 // TODO: implement unread tracking
-        });
+app.get('/api/conversations', verifyToken, async (req, res) => {
+  try {
+    const { username } = req.user;
+    const allConvIds = await store.getAllConversationIds();
+    const convList = [];
+    
+    for (const convId of allConvIds) {
+      if (convId.includes(username)) {
+        const parts = convId.split('_');
+        const otherUser = parts[0] === username ? parts[1] : parts[0];
+        const history = await store.getConversationHistory(convId);
+        const lastMsg = history[history.length - 1];
+        
+        if (lastMsg) {
+          convList.push({
+            username: otherUser,
+            lastMessage: lastMsg,
+            unreadCount: 0 // TODO: implement unread tracking
+          });
+        }
       }
     }
-  });
-  res.json({ conversations: convList });
+    
+    res.json({ conversations: convList });
+  } catch (err) {
+    console.error('Get conversations list error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 // Health check
@@ -183,33 +266,37 @@ wss.on('connection', (ws, req) => {
         ws.send(JSON.stringify({ type: 'error', error: 'token and deviceId required' }));
         return;
       }
+      
       try {
         const decoded = jwt.verify(token, JWT_SECRET);
         const { username } = decoded;
-        if (!users[username] || !users[username].devices[deviceId]) {
+        
+        const device = await store.getDevice(username, deviceId);
+        if (!device) {
           ws.send(JSON.stringify({ type: 'error', error: 'Device not registered' }));
           return;
         }
-        users[username].devices[deviceId].ws = ws;
+        
+        // Store WebSocket connection in memory
+        setDeviceWebSocket(username, deviceId, ws);
         ws.username = username;
         ws.deviceId = deviceId;
         console.log(`WS connected: ${username}/${deviceId}`);
 
-        // Deliver queued messages for this device
-        const pending = messages.filter(m => 
-          m.to.username === username && m.to.deviceId === deviceId
-        );
-        pending.forEach(m => {
-          ws.send(JSON.stringify(m.payload));
+        // Deliver queued messages for this device from Redis
+        const queued = await store.getQueuedMessages(username, deviceId);
+        queued.forEach(payload => {
+          ws.send(JSON.stringify(payload));
         });
-        // Remove delivered messages
-        for (let i = messages.length - 1; i >= 0; i--) {
-          if (messages[i].to.username === username && messages[i].to.deviceId === deviceId) {
-            messages.splice(i, 1);
-          }
+        
+        // Clear queue after delivery
+        if (queued.length > 0) {
+          await store.clearQueuedMessages(username, deviceId);
         }
+        
         ws.send(JSON.stringify({ type: 'identified', status: 'ok' }));
       } catch (err) {
+        console.error('WS identify error:', err);
         ws.send(JSON.stringify({ type: 'error', error: 'Invalid token' }));
       }
       return;
@@ -222,44 +309,48 @@ wss.on('connection', (ws, req) => {
         return;
       }
 
-      const recipient = users[toUsername];
-      if (!recipient) {
-        ws.send(JSON.stringify({ type: 'error', error: 'Recipient not found' }));
-        return;
-      }
-
-      // Store in conversation history (encrypted blob)
-      const convId = getConversationId(ws.username, toUsername);
-      if (!conversations[convId]) conversations[convId] = [];
-      conversations[convId].push({
-        from: ws.username,
-        to: toUsername,
-        payload, // encrypted payload
-        timestamp: Date.now()
-      });
-
-      // Fan-out: send to ALL recipient's devices
-      let deliveredCount = 0;
-      Object.keys(recipient.devices).forEach(deviceId => {
-        const device = recipient.devices[deviceId];
-        if (device.ws && device.ws.readyState === WebSocket.OPEN) {
-          device.ws.send(JSON.stringify(payload));
-          deliveredCount++;
-        } else {
-          // Queue for offline delivery
-          messages.push({
-            to: { username: toUsername, deviceId },
-            payload
-          });
+      try {
+        const recipientDevices = await store.getAllDevices(toUsername);
+        if (!recipientDevices || Object.keys(recipientDevices).length === 0) {
+          ws.send(JSON.stringify({ type: 'error', error: 'Recipient not found' }));
+          return;
         }
-      });
 
-      // Confirm to sender
-      ws.send(JSON.stringify({
-        type: 'message-sent',
-        to: toUsername,
-        deliveredTo: deliveredCount
-      }));
+        // Store in conversation history (encrypted blob)
+        const convId = getConversationId(ws.username, toUsername);
+        await store.addMessage(convId, {
+          from: ws.username,
+          to: toUsername,
+          payload, // encrypted payload (for recipient only)
+          timestamp: Date.now()
+        });
+
+        // Fan-out: send to ALL recipient's devices
+        let deliveredCount = 0;
+        const deviceIds = Object.keys(recipientDevices);
+        
+        for (const deviceId of deviceIds) {
+          const recipientWs = getDeviceWebSocket(toUsername, deviceId);
+          
+          if (recipientWs && recipientWs.readyState === WebSocket.OPEN) {
+            recipientWs.send(JSON.stringify(payload));
+            deliveredCount++;
+          } else {
+            // Queue for offline delivery in Redis
+            await store.queueMessage(toUsername, deviceId, payload);
+          }
+        }
+
+        // Confirm to sender
+        ws.send(JSON.stringify({
+          type: 'message-sent',
+          to: toUsername,
+          deliveredTo: deliveredCount
+        }));
+      } catch (err) {
+        console.error('Message send error:', err);
+        ws.send(JSON.stringify({ type: 'error', error: 'Failed to send message' }));
+      }
       return;
     }
 
@@ -267,8 +358,8 @@ wss.on('connection', (ws, req) => {
   });
 
   ws.on('close', () => {
-    if (ws.username && ws.deviceId && users[ws.username] && users[ws.username].devices[ws.deviceId]) {
-      users[ws.username].devices[ws.deviceId].ws = null;
+    if (ws.username && ws.deviceId) {
+      removeDeviceWebSocket(ws.username, ws.deviceId);
       console.log(`WS disconnected: ${ws.username}/${ws.deviceId}`);
     }
   });
@@ -283,14 +374,41 @@ setInterval(() => {
   });
 }, 30000);
 
-server.listen(PORT, () => {
-  console.log(`🚀 SecureChat Server running on port ${PORT}`);
-  console.log(`📡 REST API: http://localhost:${PORT}/api`);
-  console.log(`🔌 WebSocket: ws://localhost:${PORT}/ws`);
-  console.log(`\nEndpoints:`);
-  console.log(`  POST /api/auth/register`);
-  console.log(`  POST /api/auth/login`);
-  console.log(`  POST /api/devices/register`);
-  console.log(`  GET  /api/users/:username/public-keys`);
-  console.log(`  GET  /api/conversations`);
+// Initialize Redis connection and start server
+async function start() {
+  try {
+    await store.connect();
+    server.listen(PORT, () => {
+      console.log(`🚀 SecureChat Server running on port ${PORT}`);
+      console.log(`📡 REST API: http://localhost:${PORT}/api`);
+      console.log(`🔌 WebSocket: ws://localhost:${PORT}/ws`);
+      console.log(`💾 Storage: Redis (${process.env.REDIS_URL || 'redis://localhost:6379'})`);
+      console.log(`\nEndpoints:`);
+      console.log(`  POST /api/auth/register`);
+      console.log(`  POST /api/auth/login`);
+      console.log(`  POST /api/devices/register`);
+      console.log(`  GET  /api/users/:username/public-keys`);
+      console.log(`  GET  /api/conversations`);
+    });
+  } catch (err) {
+    console.error('Failed to start server:', err);
+    console.error('Make sure Redis is running: redis-server');
+    process.exit(1);
+  }
+}
+
+// Graceful shutdown
+process.on('SIGINT', async () => {
+  console.log('\nShutting down...');
+  await store.disconnect();
+  process.exit(0);
 });
+
+process.on('SIGTERM', async () => {
+  console.log('\nShutting down...');
+  await store.disconnect();
+  process.exit(0);
+});
+
+start();
+

@@ -1,11 +1,21 @@
 import { useEffect, useRef, useState } from "react";
 import { decryptMessageWithPrivateKey, encryptMessageForPublicKey } from "./crypto";
 
-const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:3000";
+// Auto-detect API base: use same hostname as current page, or fallback to env/localhost
+const getApiBase = () => {
+  if (import.meta.env.VITE_API_BASE) return import.meta.env.VITE_API_BASE;
+  const hostname = window.location.hostname;
+  if (hostname === 'localhost' || hostname === '127.0.0.1') {
+    return 'http://localhost:3000';
+  }
+  return `http://${hostname}:3000`;
+};
+const API_BASE = getApiBase();
 const WS_URL = `${API_BASE.replace(/^https?/, API_BASE.startsWith("https") ? "wss" : "ws")}/ws`;
 
 export default function Chat({ user }) {
   const { userId, deviceId, keyPair } = user;
+  const token = user.token || localStorage.getItem('token');
   const [toUser, setToUser] = useState("");
   const [text, setText] = useState("");
   const [messages, setMessages] = useState([]); // {direction: 'in'|'out'|'system', text, from, to, time}
@@ -69,7 +79,9 @@ export default function Chat({ user }) {
     if (!toUserTrim || !textTrim) return;
 
     try {
-      const resp = await fetch(`${API_BASE}/api/public-keys/${toUserTrim}`);
+      const resp = await fetch(`${API_BASE}/api/users/${toUserTrim}/public-keys`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
       if (!resp.ok) throw new Error("Recipient not found");
       const { devices } = await resp.json();
       const deviceIds = Object.keys(devices || {});
