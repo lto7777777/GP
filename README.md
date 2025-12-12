@@ -19,11 +19,23 @@ npm install
 This will install:
 - `express` - Web server
 - `ws` - WebSocket server
+- `redis` - Redis client for persistent storage
 - `bcryptjs` - Password hashing
 - `jsonwebtoken` - JWT authentication
 - `cors`, `helmet`, `body-parser` - Security & middleware
 
-### 2. Start the Backend Server
+### 2. Start Redis
+
+**Option A: Using Docker (Recommended)**
+```bash
+docker run -d -p 6379:6379 redis:alpine
+```
+
+**Option B: Install Redis locally**
+- [Download Redis](https://redis.io/download)
+- Or use: `brew install redis` (macOS) / `sudo apt install redis` (Linux)
+
+### 3. Start the Backend Server
 
 ```bash
 cd server
@@ -32,16 +44,16 @@ npm start
 npm run dev
 ```
 
-Server will run on `http://localhost:3000`
+Server will run on `http://localhost:3000` and connect to Redis automatically.
 
-### 3. Install Frontend Dependencies
+### 4. Install Frontend Dependencies
 
 ```bash
 cd web
 npm install
 ```
 
-### 4. Start the Web App
+### 5. Start the Web App
 
 ```bash
 cd web
@@ -95,7 +107,7 @@ Open `http://localhost:5173` in your browser.
 ### Backend (`server/`)
 - REST API for authentication, device registration, and message history
 - WebSocket server for real-time message delivery
-- In-memory storage (replace with MongoDB/PostgreSQL for production)
+- Redis storage for persistent data (users, devices, conversations, offline messages)
 
 ### Frontend (`web/`)
 - React app with clean Telegram-like UI
@@ -109,13 +121,14 @@ Open `http://localhost:5173` in your browser.
 **Backend:**
 - `PORT` - Server port (default: 3000)
 - `JWT_SECRET` - Secret for JWT tokens (change in production!)
+- `REDIS_URL` - Redis connection URL (default: redis://localhost:6379)
 
 **Frontend:**
 - `VITE_API_BASE` - Backend API URL (default: http://localhost:3000)
 
 ## 📝 Next Steps for Production
 
-1. **Database:** Replace in-memory storage with MongoDB/PostgreSQL
+1. **Database:** Redis is already configured! Consider Redis Cloud or managed Redis for production
 2. **HTTPS:** Deploy with proper SSL certificates
 3. **Key Storage:** Encrypt private keys with user passphrase
 4. **Mobile App:** Build React Native client

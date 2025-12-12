@@ -1,41 +1,135 @@
 # 🚀 How to Run the Encrypted Messenger App
 
-## Step-by-Step Instructions
+## Prerequisites
 
-### Prerequisites
-- ✅ Node.js installed (v14 or higher)
-- ✅ npm installed (comes with Node.js)
-- ✅ Two browser windows/tabs (to test with two users)
+Before you begin, make sure you have:
+- ✅ **Node.js** installed (v14 or higher) - [Download here](https://nodejs.org/)
+- ✅ **npm** installed (comes with Node.js)
+- ✅ **Redis** installed and running - [Download here](https://redis.io/download) or use Docker:
+  ```bash
+  docker run -d -p 6379:6379 redis:alpine
+  ```
+- ✅ **Git** (to clone the repository)
 
 ---
 
-## Step 1: Start the Backend Server
-
-Open **Command Prompt** (not PowerShell) or **Git Bash**:
+## Step 1: Clone the Repository
 
 ```bash
-cd "D:\smthing stupid\GP\server"
+git clone <your-repo-url>
+cd <repository-name>
+```
+
+Replace `<your-repo-url>` with your actual repository URL and `<repository-name>` with the folder name.
+
+---
+
+## Step 2: Install Backend Dependencies
+
+Open a terminal/command prompt and navigate to the server directory:
+
+```bash
+cd server
 npm install
+```
+
+This will install all required packages:
+- `express` - Web server
+- `ws` - WebSocket server
+- `redis` - Redis client
+- `bcryptjs` - Password hashing
+- `jsonwebtoken` - JWT authentication
+- And other dependencies...
+
+---
+
+## Step 3: Start Redis (if not already running)
+
+**Option A: Using Docker (Recommended)**
+```bash
+docker run -d -p 6379:6379 redis:alpine
+```
+
+**Option B: Using Redis installed locally**
+```bash
+# On Windows (if installed via WSL or native)
+redis-server
+
+# On macOS (if installed via Homebrew)
+brew services start redis
+
+# On Linux
+sudo systemctl start redis
+# or
+redis-server
+```
+
+**Verify Redis is running:**
+```bash
+redis-cli ping
+# Should return: PONG
+```
+
+---
+
+## Step 4: Start the Backend Server
+
+In the same terminal (still in the `server` directory):
+
+```bash
 npm start
 ```
 
 **Expected output:**
 ```
-Server running on http://localhost:3000
-WebSocket server ready
+🔌 Redis connecting...
+✅ Redis connected and ready
+🚀 SecureChat Server running on port 3000
+📡 REST API: http://localhost:3000/api
+🔌 WebSocket: ws://localhost:3000/ws
+💾 Storage: Redis (redis://localhost:6379)
 ```
 
 **Keep this terminal window open!** The server must stay running.
 
+**Note:** If you need to use a different Redis URL, set the environment variable:
+```bash
+# Windows (PowerShell)
+$env:REDIS_URL="redis://your-redis-host:6379"
+npm start
+
+# Windows (Command Prompt)
+set REDIS_URL=redis://your-redis-host:6379
+npm start
+
+# macOS/Linux
+REDIS_URL=redis://your-redis-host:6379 npm start
+```
+
 ---
 
-## Step 2: Start the Web Client (in a NEW terminal)
+## Step 5: Install Frontend Dependencies
 
-Open a **NEW** Command Prompt or Git Bash window:
+Open a **NEW** terminal window and navigate to the web directory:
 
 ```bash
-cd "D:\smthing stupid\GP\web"
+cd web
 npm install
+```
+
+This will install:
+- `react` & `react-dom` - UI framework
+- `node-forge` - Crypto fallback for HTTP
+- `vite` - Build tool
+- And other dependencies...
+
+---
+
+## Step 6: Start the Web Client
+
+In the same terminal (still in the `web` directory):
+
+```bash
 npm run dev
 ```
 
@@ -47,26 +141,28 @@ npm run dev
   ➜  Network: use --host to expose
 ```
 
+**Keep this terminal window open too!**
+
 ---
 
-## Step 3: Open the App in Your Browser
+## Step 7: Open the App in Your Browser
 
 1. Open your browser and go to: **http://localhost:5173**
-2. You should see the login screen
+2. You should see the login/register screen
 
 ---
 
-## Step 4: Test the App (Two Users)
+## Step 8: Test the App (Two Users)
 
-### User 1:
+### User 1 (Alice):
 1. Click **"Don't have an account? Register"**
 2. Enter:
    - Username: `alice`
    - Password: `password123`
 3. Click **"Register"**
-4. You'll be logged in automatically
+4. You'll be logged in automatically and see the chat list
 
-### User 2:
+### User 2 (Bob):
 1. Open a **new browser window** (or incognito/private window)
 2. Go to: **http://localhost:5173**
 3. Click **"Don't have an account? Register"**
@@ -76,11 +172,11 @@ npm run dev
 5. Click **"Register"**
 
 ### Start Chatting:
-1. In **Alice's window**: Click **"+ New Chat"**
+1. In **Alice's window**: Click **"+ New Chat"** button
 2. Enter username: `bob`
 3. Click **"Start Chat"**
 4. Type a message and press Enter
-5. Switch to **Bob's window** - you should see the message appear!
+5. Switch to **Bob's window** - you should see the message appear instantly! 🎉
 
 ---
 
@@ -88,16 +184,21 @@ npm run dev
 
 ### Terminal 1 (Backend):
 ```bash
-cd "D:\smthing stupid\GP\server"
+cd server
 npm install
 npm start
 ```
 
 ### Terminal 2 (Frontend):
 ```bash
-cd "D:\smthing stupid\GP\web"
+cd web
 npm install
 npm run dev
+```
+
+### Terminal 3 (Redis - if not using Docker):
+```bash
+redis-server
 ```
 
 ---
@@ -105,56 +206,154 @@ npm run dev
 ## 🔧 Troubleshooting
 
 ### ❌ "npm is not recognized"
-- Make sure Node.js is installed
+- Make sure Node.js is installed: `node --version`
 - Try using the full path: `C:\Program Files\nodejs\npm.cmd install`
+- Or restart your terminal after installing Node.js
 
 ### ❌ "Port 3000 already in use"
 - Another app is using port 3000
-- Close that app or change the port in `server.js`:
-  ```javascript
-  const PORT = process.env.PORT || 3001; // Change to 3001
+- Close that app or change the port:
+  ```bash
+  # Windows (PowerShell)
+  $env:PORT=3001
+  npm start
+  
+  # macOS/Linux
+  PORT=3001 npm start
   ```
+
+### ❌ "Cannot connect to Redis"
+- Make sure Redis is running: `redis-cli ping`
+- Check Redis URL in environment variables
+- If using Docker, verify container is running: `docker ps`
 
 ### ❌ "Cannot connect to server"
 - Make sure the backend server is running (Terminal 1)
-- Check that it says "Server running on http://localhost:3000"
+- Check that it says "✅ Redis connected and ready"
+- Verify it says "Server running on port 3000"
 
 ### ❌ "WebSocket connection failed"
 - Backend server must be running first
 - Check browser console (F12) for errors
 - Make sure both servers are running
+- Verify Redis is connected (check backend terminal)
+
+### ❌ "Web Crypto API is not available"
+- This happens when accessing via HTTP from a non-localhost address
+- Solution: Use `http://localhost:5173` instead of your IP address
+- Or enable HTTPS (the app has a fallback, but localhost is recommended)
 
 ### ❌ PowerShell Script Errors
 - **Use Command Prompt instead** (cmd.exe)
 - Or use Git Bash
 - PowerShell has security restrictions that block npm scripts
+- Or run: `Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser`
 
 ---
 
-## 📝 Notes
+## 📝 Important Notes
 
-- **No MongoDB needed!** This version uses in-memory storage (data resets when server restarts)
-- **No .env file needed** - uses default values
-- **Messages are encrypted** - even the server can't read them
-- **Data is temporary** - restarting the server clears all users/messages
+- **Redis Required:** This version uses Redis for persistent storage. Data survives server restarts!
+- **No MongoDB needed:** Redis handles all data storage
+- **Messages are encrypted:** Even the server can't read them (end-to-end encryption)
+- **Data persists:** Unlike in-memory storage, your data is saved in Redis
+- **Multi-device support:** Each device has its own encryption keys
+- **Disappearing messages:** Toggle in chat view with timer options
+
+---
+
+## 🌐 Running on Local Network (LAN)
+
+To access from other devices on your network:
+
+### Backend:
+```bash
+# The server already listens on 0.0.0.0 by default
+# Just make sure firewall allows port 3000
+```
+
+### Frontend:
+```bash
+cd web
+npm run dev -- --host 0.0.0.0
+```
+
+Then access from other devices using your computer's IP:
+- `http://YOUR_IP_ADDRESS:5173`
+
+**Note:** For non-localhost access, you may see "Web Crypto API is not available" warning. The app has a fallback, but for best security, use HTTPS or localhost.
 
 ---
 
 ## 🎉 Success Indicators
 
-✅ Backend terminal shows: `Server running on http://localhost:3000`  
+✅ Backend terminal shows: `✅ Redis connected and ready`  
+✅ Backend terminal shows: `🚀 SecureChat Server running on port 3000`  
 ✅ Frontend terminal shows: `Local: http://localhost:5173/`  
-✅ Browser shows login screen  
+✅ Browser shows login/register screen  
 ✅ You can register and login  
 ✅ You can send messages between users  
+✅ Messages appear in real-time  
+✅ Data persists after server restart (thanks to Redis!)
 
 ---
 
 ## 🚀 Next Steps
 
-- Deploy backend to Heroku/Railway/Render
+- Deploy backend to Heroku/Railway/Render (with Redis addon)
 - Deploy frontend to GitHub Pages/Vercel/Netlify
-- Add MongoDB for persistent storage
 - Build mobile app with React Native
+- Add file attachments with encryption
+- Add group chats
+- Add read receipts
 
+---
 
+## 📚 Development Mode
+
+For development with auto-reload:
+
+**Backend:**
+```bash
+cd server
+npm run dev  # Uses nodemon for auto-reload
+```
+
+**Frontend:**
+```bash
+cd web
+npm run dev  # Vite has hot-reload by default
+```
+
+---
+
+## 🐳 Docker Compose (Optional)
+
+Create a `docker-compose.yml` in the root directory:
+
+```yaml
+version: '3.8'
+services:
+  redis:
+    image: redis:alpine
+    ports:
+      - "6379:6379"
+  
+  server:
+    build: ./server
+    ports:
+      - "3000:3000"
+    depends_on:
+      - redis
+    environment:
+      - REDIS_URL=redis://redis:6379
+```
+
+Then run:
+```bash
+docker-compose up
+```
+
+---
+
+**Happy Chatting! 🔒💬**
