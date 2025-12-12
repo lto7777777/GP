@@ -1,0 +1,55 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Build outputs
+dist/
+build/
+*.log
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# SSL Certificates (sensitive - should never be committed)
+**/certs/*.key
+**/certs/*.crt
+**/certs/*.pem
+server/certs/*.key
+server/certs/*.crt
+server/certs/*.pem
+
+# Lock files (optional - some teams commit these, some don't)
+# Uncomment if you don't want to commit lock files:
+# package-lock.json
+# yarn.lock
+# pnpm-lock.yaml
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
+
+# Redis dump (if any)
+dump.rdb
+
+# Coverage reports
+coverage/
+.nyc_output/
+
+# Old/unused files
+server/src/
+mobile/
+
