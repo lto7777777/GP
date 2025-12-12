@@ -9,12 +9,20 @@ A Telegram-like encrypted chat application with:
 
 ## 🚀 Quick Start
 
-### 1. Install Backend Dependencies
+**⚠️ CRITICAL:** After cloning, `node_modules/` folders do NOT exist. You **MUST** run `npm install` in both `server/` and `web/` directories BEFORE starting the app, or you'll get "Cannot find module" errors.
+
+### 1. Install Backend Dependencies ⚠️ REQUIRED
 
 ```bash
 cd server
-npm install
+npm install    # ⚠️ Run this FIRST - creates node_modules/ folder
 ```
+
+**What this does:** 
+- Reads `package.json` to see what packages are needed
+- Downloads all dependencies from npm (takes 1-2 minutes)
+- Creates the `node_modules/` folder automatically
+- **Required before running `npm start`**
 
 This will install:
 - `express` - Web server
@@ -46,12 +54,18 @@ npm run dev
 
 Server will run on `http://localhost:3000` and connect to Redis automatically.
 
-### 4. Install Frontend Dependencies
+### 4. Install Frontend Dependencies ⚠️ REQUIRED
 
 ```bash
 cd web
-npm install
+npm install    # ⚠️ Run this FIRST - creates node_modules/ folder
 ```
+
+**What this does:** 
+- Reads `package.json` to see what packages are needed
+- Downloads all dependencies from npm (takes 1-2 minutes)
+- Creates the `node_modules/` folder automatically
+- **Required before running `npm run dev`**
 
 ### 5. Start the Web App
 
@@ -137,18 +151,25 @@ Open `http://localhost:5173` in your browser.
 
 ## 🐛 Troubleshooting
 
+**"Cannot find module 'express'" or "Cannot find module 'react'"**
+- ⚠️ **You forgot to run `npm install`!**
+- Go to the `server/` or `web/` directory and run: `npm install`
+- Wait for it to finish, then try starting the app again
+
 **"WebSocket error" or "Connecting..."**
-- Make sure the backend server is running
+- Make sure the backend server is running (`npm start` in `server/` directory)
 - Check that port 3000 is not blocked
+- Verify Redis is running
 
 **"User not found"**
 - Make sure your friend has registered and logged in at least once
 - Check the username spelling
 
 **Messages not appearing**
-- Check browser console for errors
+- Check browser console for errors (F12)
 - Make sure both users are logged in
 - Verify WebSocket connection is established (green "Online" indicator)
+- Make sure Redis is running
 
 ## 📄 License
 

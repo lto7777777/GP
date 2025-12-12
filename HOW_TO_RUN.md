@@ -22,15 +22,30 @@ cd <repository-name>
 
 Replace `<your-repo-url>` with your actual repository URL and `<repository-name>` with the folder name.
 
+**Note:** After cloning, you will NOT have `node_modules/` folders. This is normal! They are excluded from Git (via `.gitignore`) because they're huge and can be recreated. You'll install them in the next steps.
+
 ---
 
-## Step 2: Install Backend Dependencies
+## Step 2: Install Backend Dependencies ⚠️ REQUIRED
+
+**⚠️ CRITICAL:** The `node_modules/` folder does NOT exist after cloning. You **MUST** run `npm install` before starting the server, or you'll get errors like "Cannot find module 'express'".
 
 Open a terminal/command prompt and navigate to the server directory:
 
 ```bash
 cd server
 npm install
+```
+
+**What this does:**
+- Reads `package.json` to see what packages are needed
+- Downloads all dependencies from npm (this may take 1-2 minutes)
+- Creates the `node_modules/` folder automatically
+- **This is REQUIRED - the app will NOT work without it!**
+
+**Expected output:** You'll see a list of packages being installed, ending with something like:
+```
+added 148 packages, and audited 149 packages in 45s
 ```
 
 This will install all required packages:
@@ -108,13 +123,26 @@ REDIS_URL=redis://your-redis-host:6379 npm start
 
 ---
 
-## Step 5: Install Frontend Dependencies
+## Step 5: Install Frontend Dependencies ⚠️ REQUIRED
+
+**⚠️ CRITICAL:** Just like the backend, the `node_modules/` folder does NOT exist. You **MUST** run `npm install` here too, or the frontend won't work!
 
 Open a **NEW** terminal window and navigate to the web directory:
 
 ```bash
 cd web
 npm install
+```
+
+**What this does:**
+- Reads `package.json` to see what packages are needed
+- Downloads all dependencies from npm (this may take 1-2 minutes)
+- Creates the `node_modules/` folder automatically
+- **This is REQUIRED - the frontend will NOT work without it!**
+
+**Expected output:** You'll see a list of packages being installed, ending with something like:
+```
+added 157 packages, and audited 158 packages in 30s
 ```
 
 This will install:
@@ -182,17 +210,19 @@ npm run dev
 
 ## 🎯 Quick Commands Summary
 
+**⚠️ IMPORTANT:** Run `npm install` in both directories BEFORE starting the servers!
+
 ### Terminal 1 (Backend):
 ```bash
 cd server
-npm install
+npm install    # ⚠️ REQUIRED - Run this FIRST!
 npm start
 ```
 
 ### Terminal 2 (Frontend):
 ```bash
 cd web
-npm install
+npm install    # ⚠️ REQUIRED - Run this FIRST!
 npm run dev
 ```
 
@@ -201,9 +231,17 @@ npm run dev
 redis-server
 ```
 
+**Note:** If you see errors like "Cannot find module", it means you forgot to run `npm install`. Go back and run it!
+
 ---
 
 ## 🔧 Troubleshooting
+
+### ❌ "Cannot find module 'express'" or "Cannot find module 'react'"
+- ⚠️ **You forgot to run `npm install`!**
+- Go to the directory (`server/` or `web/`) and run: `npm install`
+- Wait for installation to complete (1-2 minutes)
+- Then try starting the app again
 
 ### ❌ "npm is not recognized"
 - Make sure Node.js is installed: `node --version`
