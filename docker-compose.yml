@@ -1,0 +1,32 @@
+services:
+    server:
+      build:
+        context: ./server/
+      ports:
+        - 3000:3000
+      depends_on:
+        - db
+      networks:
+        - backend-network
+      environment:
+        REDIS_URL: "redis://db:6379"
+
+    app:
+      build:
+        context: ./web/
+      profiles: [debug]
+      ports:
+        - 5173:5173
+      depends_on:
+        - server
+      networks:
+        - backend-network
+
+    db:
+      image: "redis:alpine"
+      networks:
+        - backend-network
+networks:
+  backend-network:
+    driver: bridge
+

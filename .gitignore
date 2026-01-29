@@ -52,4 +52,5 @@ coverage/
 # Old/unused files
 server/src/
 mobile/
-
+# help files
+protocol.md

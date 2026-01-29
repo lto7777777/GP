@@ -1,4 +1,17 @@
-# 🚀 How to Run the Encrypted Messenger App
+# 🚀 How to Run the Encrypted Messenger App (With docker compose)
+
+## Prerequirements
+
+Make sure docker and docker compose are up to date
+
+## Run
+
+In this directory, run:
+```bash
+docker compose up
+```
+
+# 🚀 How to Run the Encrypted Messenger App (Without docker compose)
 
 ## Prerequisites
 

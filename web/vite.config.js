@@ -13,4 +13,8 @@ export default defineConfig({
   optimizeDeps: {
     include: ['node-forge'],
   },
+  server: {
+    host: '0.0.0.0',
+    port: 5173,
+  },
 })
